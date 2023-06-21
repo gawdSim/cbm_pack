@@ -1,40 +1,33 @@
+#!/usr/bin/env python
+
 import numpy as np
 
 """
     Description:
-
-        the idea here is that we want to reshape, but we want
-        to label our axes with meaningful tags. The tags
-        guide the implementation as well as the end-user in 
-        subsequent usage of the returned array
-
-        Example: let
-            
-            data == np.ndarray with shape (32 * 1000 * 1400)
-            dims == tuple (1000, 1400, 32)
-            dims_tags == tuple ("trial", "time_step", "cell")
-
-        then the returned np.ndarray will have shape (1000, 1400, 32) s.t.
-        if returned array is called 'reshaped_data', then the quantity
-
-                            reshaped_data[500, 0, 16]
-
-        will refer to data at the 500th trial, at time step 0, for cell 16.
-
-        Mainly here so that the end-user doesn't have to think about the format
-        of the incoming data. they can just write:
-
-            data = np_arr_from_file("foo", np.ubyte)
-            formatted_data = reshape_as(data, \
-                    (NUM_TRIALS, NUM_TS, NUM_CELLS), \
-                    ("trial", "time_step", "cell"))
         
-        and be confident moving forward that they are slicing correctly
+        allowing user too much freedom is difficult to implement and may be
+        inefficient for subsequent data analysis. Thus, I will enforce the shape
+        as: (num_cells, num_trials, num_ts)
 """
 
-def reshape_as(data: np.ndarray, dims: tuple, dims_tags: tuple) -> np.ndarray:
-    # TODO: implement
-    pass
+def reshape_raster(data: np.ndarray, num_cells: int, num_trials: int, num_ts: int) -> np.ndarray:
+    try:
+        assert data.size == num_cells * num_trials * num_ts
+    except AssertionError:
+        raise RuntimeError(f"cannot reshape an array of size {data.size} into an array with dimensions"
+                             f"({num_cells}, {num_trials}, {num_ts})")
+    else:
+        transformed_data = data.reshape((num_ts * num_trials, num_cells))
+        transformed_data = transformed_data.transpose()
+        result = np.zeros((num_cells, num_trials, num_ts), dtype=data.dtype)
+        for cell_id in np.arange(num_cells):
+            trial_start = 0
+            trial_end = num_ts
+            for trial in np.arange(num_trials):
+                result[cell_id,trial,:] = transformed_data[cell_id,trial_start:trial_end]
+                trial_start += num_ts
+                trial_end += num_ts
+        return result
 
 """
     Description:
@@ -48,9 +41,12 @@ def reshape_as(data: np.ndarray, dims: tuple, dims_tags: tuple) -> np.ndarray:
         the sum will occur over trials
 """
 def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray
-    # TODO: implement
-    pass
-
+    try:
+        assert len(raster.shape) == 3
+    except AssertionError
+        raise ValueError(f"The expected number of dimensions was 3. Got {len(raster.shape)}")
+    else:
+        return np.sum(raster,1, dtype=np.uint32) # potential memory hog
 """
     Description:
 
@@ -72,12 +68,13 @@ def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray
         subsequent lines of the code.
 
 """
-def calc_inst_fire_rates_from(spike_trains: np.ndarray, data_type: str) -> np.ndarray:
+# TODO: redo this function over multiple cells
+def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str, num_trials=0: int) -> np.ndarray:
     if data_type == "psth":
-        return (spike_trains * 1000) / num_trials
+        return (input_data * 1000) / num_trials
     elif data_type == "raster":
-        run_time = spike_trains.size
-        spk_times = np.nonzero(spike_trains)[0]
+        run_time = input_data.shape[2]
+        spk_times = np.nonzero(input_data)[0]
         aligned_inst_fire_rates = []
 
         if spk_times.size == 0:
@@ -85,11 +82,11 @@ def calc_inst_fire_rates_from(spike_trains: np.ndarray, data_type: str) -> np.nd
         else:
             isi = np.diff(spk_times)
             inst_fire_rates = 1 / isi * 1000
-            spike_trains_proxy = spike_trains[spk_times[0]+1:spk_times[-1]]
+            input_data_proxy = input_data[spk_times[0]+1:spk_times[-1]]
             count = 0
-            for i in np.arange(spike_trains_proxy.size):
-                aligned_inst_fire_rates.append(inst_fire_rates[count]) 
-                if spike_trains_proxy[i] == 1:
+            for i in np.arange(input_data_proxy.size):
+                aligned_inst_fire_rates.append(inst_fire_rates[count])
+                if input_data_proxy[i] == 1:
                     count += 1
             aligned_inst_fire_rates = np.array(aligned_inst_fire_rates)
             prepend = np.zeros(spk_times[0])
@@ -100,9 +97,9 @@ def calc_inst_fire_rates_from(spike_trains: np.ndarray, data_type: str) -> np.nd
     else:
         raise ValueError(f"unknown data type '{data_type}'")
 
-def calc_smooth_inst_fire_rates_from(spike_trains: np.ndarray, data_type: str, kernel: str) -> np.ndarray:
+def calc_smooth_inst_fire_rates_from(input_data: np.ndarray, data_type: str, kernel="half_gaussian": str, num_trials=0: int) -> np.ndarray:
     try:
-        inst_fr = calc_inst_fire_rates_from(spike_trains, data_type)
+        inst_fr = calc_inst_fire_rates_from(input_data, data_type, num_trials=num_trials)
     except ValueError as v_err:
         raise ValueError(v_err)
     else:
