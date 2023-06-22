@@ -5,15 +5,10 @@ import numpy as np
 """
     Description:
         
-        want to return an array of shape (num_ts_collect) where
-        the value at a given time represents the cr amplitude from
-        a simulated RN which is integrated each of our dcns
+        want an array with shape (num_trials, num_ts_collect) to
+        get the values necessary for a waterfall plot of CRs
 
-        TODO: need to decide what the input shape should be.
-              do we include the number of trials, assuming
-              we generated this from dcn rasters? what if all
-              we care about is the avg amplitude within a trial,
-              for a certain number of trials?
+        assume the input has shape (num_cells, num_trials, num_ts_collect)
 """
 def calc_cr_amp(dcn_rasters: np.ndarray) -> np.ndarray:
     pass

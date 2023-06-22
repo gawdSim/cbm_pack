@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
+import scipy.stats as sts
 
 """
     Description:
@@ -40,10 +41,10 @@ def reshape_raster(data: np.ndarray, num_cells: int, num_trials: int, num_ts: in
         then the returned np.ndarray will have dims (32, 1400), where
         the sum will occur over trials
 """
-def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray
+def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray:
     try:
         assert len(raster.shape) == 3
-    except AssertionError
+    except AssertionError:
         raise ValueError(f"The expected number of dimensions was 3. Got {len(raster.shape)}")
     else:
         return np.sum(raster,1, dtype=np.uint32) # potential memory hog
@@ -68,13 +69,14 @@ def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray
         subsequent lines of the code.
 
 """
-# TODO: redo this function over multiple cells
-def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str, num_trials=0: int) -> np.ndarray:
-    if data_type == "psth":
-        return (input_data * 1000) / num_trials
-    elif data_type == "raster":
-        run_time = input_data.shape[2]
-        spk_times = np.nonzero(input_data)[0]
+def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
+    try:
+        assert len(spike_train.shape) == 1
+    except AssertionError:
+        raise ValueError(f"The expected number of dimensions was 1. Got {len(spike_train.shape)}")
+    else:
+        run_time = spike_train.shape[0]
+        spk_times = np.nonzero(spike_train)[0]
         aligned_inst_fire_rates = []
 
         if spk_times.size == 0:
@@ -82,11 +84,11 @@ def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str, num_trials
         else:
             isi = np.diff(spk_times)
             inst_fire_rates = 1 / isi * 1000
-            input_data_proxy = input_data[spk_times[0]+1:spk_times[-1]]
+            spike_train_proxy = spike_train[spk_times[0]+1:spk_times[-1]]
             count = 0
-            for i in np.arange(input_data_proxy.size):
+            for i in np.arange(spike_train_proxy.size):
                 aligned_inst_fire_rates.append(inst_fire_rates[count])
-                if input_data_proxy[i] == 1:
+                if spike_train_proxy[i] == 1:
                     count += 1
             aligned_inst_fire_rates = np.array(aligned_inst_fire_rates)
             prepend = np.zeros(spk_times[0])
@@ -94,20 +96,77 @@ def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str, num_trials
             append = np.zeros(run_time - aligned_inst_fire_rates.size)
             aligned_inst_fire_rates = np.concatenate((aligned_inst_fire_rates, append))
             return aligned_inst_fire_rates
-    else:
-        raise ValueError(f"unknown data type '{data_type}'")
 
-def calc_smooth_inst_fire_rates_from(input_data: np.ndarray, data_type: str, kernel="half_gaussian": str, num_trials=0: int) -> np.ndarray:
-    try:
-        inst_fr = calc_inst_fire_rates_from(input_data, data_type, num_trials=num_trials)
-    except ValueError as v_err:
-        raise ValueError(v_err)
+"""
+    Description:
+
+        computes the instantaneous firing rates for all cells and trials within input_data.
+        Expected input data can either be psth or raster data, and the respective shapes of
+        either is (num_cells, num_ts) and (num_cells, num_trials, num_ts). An array of the 
+        same shape is returned
+"""
+def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str = "raster", num_trials: int = 0) -> np.ndarray:
+    if data_type == "psth":
+        try:
+            assert num_trials > 0
+        except AssertionError:
+            raise ValueError("Number of trials must be greater than zero for psth input data type")
+        else:
+            return (input_data * 1000) / num_trials
+    elif data_type == "raster":
+        try:
+            assert len(input_data.shape) == 3
+        except AssertionError:
+            raise ValueError(f"Expected input dimensions to be 3, got '{input_data.shape}'")
+        else:
+            num_cells, num_trials, num_ts_per_trial = input_data.shape
+            frs = np.zeros(input_data.shape)
+            for cell_id in np.arange(num_cells):
+                frs[cell_id] = calc_inst_fire_rates_from_rast_1d( \
+                    input_data[cell_id].reshape(num_trials * num_ts_per_trial)).reshape(num_trials, num_ts_per_trial)
+            return frs
     else:
-        #TODO convolve with kernel
-        if kernel == "gaussian":
-            smooth_range = np.arange(FR_SMOOTH_MIN, FR_SMOOTH_MAX + 1, 1)
-            smooth_gaussian = sts.norm.pdf(smooth_range, FR_SMOOTH_MU, FR_SMOOTH_SIGMA)
-            smooth_cell_inst_fr_trials[trial, :] = np.convolve(cell_inst_fr_trials[trial, :], smooth_gaussian, 'same')
-            pass
-        elif kernel == "half_gaussian":
-            pass
+        raise ValueError(f"Unknown data type '{data_type}'")
+
+def calc_smooth_inst_fire_rates_from(input_data: np.ndarray,
+        data_type: str, \
+        kernel_type: str = "half_gaussian", \
+        kernel_loc: float = 0.0, \
+        kernel_scale: float = 10.0, \
+        kernel_scale_mult: float = 8.0, \
+        num_trials: int = 0) -> np.ndarray:
+    if data_type == "raster" or data_type == "psth":
+        try:
+            inst_fr = calc_inst_fire_rates_from(input_data, data_type, num_trials=num_trials)
+        except ValueError as v_err:
+            raise ValueError(v_err)
+        else:
+            if kernel_type == "gaussian":
+                kernel = sts.norm.pdf(
+                    np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+                    kernel_loc,
+                    kernel_scale)
+            elif kernel_type == "half_gaussian":
+                kernel = sts.halfnorm.pdf(
+                    np.arange(kernel_scale_mult * kernel_scale + 1),
+                    kernel_loc,
+                    kernel_scale)
+            else:
+                raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+                return
+            smooth_inst_frs = np.zeros(input_data.shape)
+            ax = 0 if data_type == "psth" else 1
+            mode = 'same' if kernel_type == "gaussian" else 'full'
+            for cell_id in np.arange(input_data.shape[0]):
+                convolved = np.apply_along_axis( \
+                        lambda m: np.convolve(m, kernel, mode), axis=ax, arr=inst_fr[cell_id])
+                if mode == 'same':
+                    if data_type == "raster":
+                        smooth_inst_frs[cell_id] = convolved[:,:input_data.shape[2]]
+                    else:
+                        smooth_inst_frs[cell_id] = convolved[:input_data.shape[1]]
+
+            return smooth_inst_frs
+    else:
+        raise ValueError(f"Expected a data type of either 'raster' or 'psth'. Got '{data_type}'")
+
