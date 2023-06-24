@@ -5,66 +5,39 @@ import numpy as np
 MS_PER_TIME_STEP = 1
 
 """
-Public Const gETauRN = 15
-Public Const ELeakRN = 0
-Public gLeakRN As Single
-Public gEDecayRN As Single
-
-Public Type RedNucleusCell
-  Vm As Single
-  gE(NCNUMBER) As Single
-End Type
-
-Public RN As RedNucleusCell
-
-Public Sub RN_TDV()
-Dim X As Integer
-    gLeakRN = 0.025 / (6 - Time_step_size)
-    gEDecayRN = Exp(-Time_step_size / gETauRN)
-End Sub
-
-Public Sub DoWorkRN()
-Dim i As Integer
-Dim gE As Single
-    gE = 0
-    For i = 1 To NCNUMBER
-        RN.gE(i) = RN.gE(i) * gEDecayRN
-        RN.gE(i) = RN.gE(i) + (Nc(i).act * 0.012)
-        gE = gE + RN.gE(i)
-    Next i
-    gE = gE - 0.05
-    If gE < 0 Then gE = 0
-    gE = gE * gE * gE * 5#
-    If gE < 0.02 Then gE = 0
-    RN.Vm = RN.Vm - (gLeakRN * (RN.Vm)) + (gE * (80 - RN.Vm))
-    RN_Histo(Bincounter) = RN.Vm * 100
-End Sub
-"""
-
-"""
     Description:
 
-        computes the value of the excitatory conductance
+        computes the membrane current of a simulated red nucleus (RN)
+        cell which receives input from all of our deep nucleus cells
+
+        NOTE: we initialize the first time step of EVERY trial to 
+        the same value for both the excitatory conductance and
+        the membrane potential. This may not be what we want.
+        we may want to keep a running record of each for all ts
+        in every trial. this is in conflict with the idea that we
+        will collect rasters at only probe trials rather than all
+        trials. May want to just collect rasters at all trials and
+        then run them through this alg, updating across all trials
 """
 
-#TODO: finish
 def rn_integrator(nc_rasters: np.ndarray) -> np.ndarray:
-    g_exc_tau_rn = 15.0
-    e_leak_rn = 0.0
-    g_leak_rn = 0.025 / 5.0
-    g_exc_dec_rn = np.exp(-MS_PER_TIME_STEP / g_exc_tau_rn)
+    g_exc_tau = 15.0
+    e_leak = -60.0
+    g_leak = 0.01
+    g_exc_inc = 0.005
+    g_exc_dec = np.exp(-MS_PER_TIME_STEP / g_exc_tau)
     num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
     g_exc_sums = np.sum(nc_rasters, axis=0)
     g_exc = np.zeros(num_trials, num_ts_per_trials, dtype=np.single)
+    v_m = np.zeros(num_trials, num_ts_per_trials, dtype=np.single)
+    g_exc[:, 0] = g_exc_sums[:, 0] * g_exc_inc
+    v_m[:, 0] = e_leak
     for ts in np.arange(num_ts_per_trial):
-        if ts == 0:
-            g_exc[:, ts] = g_exc_sums[:, ts] * 0.012
-        else:
-            g_exc[:, ts] += g_exc[:, ts-1]
-            g_exc[:, ts] += g_exc_sums[:, ts] * 0.012
-        
-        g_exc[:, ts] *= g_exc_dec_rn
-
+        g_exc[:, ts] = g_exc_sums[:, ts] * g_exc_inc + g_exc[:, ts-1] * g_exc_dec
+        v_m[:, ts] = v_m[:, ts-1] \
+                   + g_leak * (e_leak - v_m[:, ts-1]) \
+                   + g_exc[:, ts] * v_m[:, ts-1]
+    return v_m
 
 """
     Description:
