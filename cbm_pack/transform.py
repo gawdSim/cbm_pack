@@ -128,45 +128,99 @@ def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str = "raster",
     else:
         raise ValueError(f"Unknown data type '{data_type}'")
 
-def calc_smooth_inst_fire_rates_from(input_data: np.ndarray,
-        data_type: str, \
-        kernel_type: str = "half_gaussian", \
-        kernel_loc: float = 0.0, \
-        kernel_scale: float = 10.0, \
-        kernel_scale_mult: float = 8.0, \
-        num_trials: int = 0) -> np.ndarray:
-    if data_type == "raster" or data_type == "psth":
-        try:
-            inst_fr = calc_inst_fire_rates_from(input_data, data_type, num_trials=num_trials)
-        except ValueError as v_err:
-            raise ValueError(v_err)
-        else:
-            if kernel_type == "gaussian":
-                kernel = sts.norm.pdf(
-                    np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
-                    kernel_loc,
-                    kernel_scale)
-            elif kernel_type == "half_gaussian":
-                kernel = sts.halfnorm.pdf(
-                    np.arange(kernel_scale_mult * kernel_scale + 1),
-                    kernel_loc,
-                    kernel_scale)
-            else:
-                raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
-                return
-            smooth_inst_frs = np.zeros(input_data.shape)
-            ax = 0 if data_type == "psth" else 1
-            mode = 'same' if kernel_type == "gaussian" else 'full'
-            for cell_id in np.arange(input_data.shape[0]):
-                convolved = np.apply_along_axis( \
-                        lambda m: np.convolve(m, kernel, mode), axis=ax, arr=inst_fr[cell_id])
-                if mode == 'same':
-                    if data_type == "raster":
-                        smooth_inst_frs[cell_id] = convolved[:,:input_data.shape[2]]
-                    else:
-                        smooth_inst_frs[cell_id] = convolved[:input_data.shape[1]]
-
-            return smooth_inst_frs
+def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
+    kernel_type: str = "half_gaussian", \
+    kernel_loc: float = 0.0, \
+    kernel_scale: float = 10.0, \
+    kernel_scale_mult: float = 8.0) -> np.ndarray:
+    try:
+        inst_fr = calc_inst_fire_rates_from(input_data)
+    except ValueError as v_err:
+        raise ValueError(v_err)
     else:
-        raise ValueError(f"Expected a data type of either 'raster' or 'psth'. Got '{data_type}'")
+        if kernel_type == "gaussian":
+            kernel = sts.norm.pdf(
+                np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+                kernel_loc,
+                kernel_scale)
+        elif kernel_type == "half_gaussian":
+            kernel = sts.halfnorm.pdf(
+                np.arange(kernel_scale_mult * kernel_scale + 1),
+                kernel_loc,
+                kernel_scale)
+        else:
+            raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+            return
+        smooth_inst_frs = np.zeros(input_data.shape)
+        mode = 'same' if kernel_type == "gaussian" else 'full'
+        for cell_id in np.arange(input_data.shape[0]):
+            convolved = np.apply_along_axis( \
+                    lambda m: np.convolve(m, kernel, mode), axis=1, arr=inst_fr[cell_id])
+            if mode == 'full':
+                smooth_inst_frs[cell_id] = convolved[:,:input_data.shape[2]]
+            else:
+                smooth_inst_frs[cell_id] = convolved
+        return smooth_inst_frs
+
+def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
+    num_trials: int, \
+    kernel_type: str = "half_gaussian", \
+    kernel_loc: float = 0.0, \
+    kernel_scale: float = 10.0, \
+    kernel_scale_mult: float = 8.0) -> np.ndarray:
+    try:
+        inst_fr = calc_inst_fire_rates_from(input_data, "psth", num_trials=num_trials)
+    except ValueError as v_err:
+        raise ValueError(v_err)
+    else:
+        if kernel_type == "gaussian":
+            kernel = sts.norm.pdf(
+                np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+                kernel_loc,
+                kernel_scale)
+        elif kernel_type == "half_gaussian":
+            kernel = sts.halfnorm.pdf(
+                np.arange(kernel_scale_mult * kernel_scale + 1),
+                kernel_loc,
+                kernel_scale)
+        else:
+            raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+            return
+        smooth_inst_frs = np.zeros(input_data.shape)
+        mode = 'same' if kernel_type == "gaussian" else 'full'
+        for cell_id in np.arange(input_data.shape[0]):
+            convolved = np.apply_along_axis( \
+                lambda m: np.convolve(m, kernel, mode), axis=0, arr=inst_fr[cell_id])
+            if mode == 'full':
+                smooth_inst_frs[cell_id] = convolved[:,:input_data.shape[1]]
+            else:
+                smooth_inst_frs[cell_id] = convolved
+        return smooth_inst_frs
+
+def calc_smooth_mean_frs(mean_rasters: np.ndarray,
+    kernel_type: str = "half_gaussian", \
+    kernel_loc: float = 0.0, \
+    kernel_scale: float = 10.0, \
+    kernel_scale_mult: float = 8.0) -> np.ndarray:
+    if kernel_type == "gaussian":
+        kernel = sts.norm.pdf(
+            np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+            kernel_loc,
+            kernel_scale)
+    elif kernel_type == "half_gaussian":
+        kernel = sts.halfnorm.pdf(
+            np.arange(kernel_scale_mult * kernel_scale + 1),
+            kernel_loc,
+            kernel_scale)
+    else:
+        raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+        return
+    mode = 'same' if kernel_type == "gaussian" else 'full'
+    convolved = np.apply_along_axis( \
+        lambda m: np.convolve(m, kernel, mode), axis=0, arr=mean_rasters)
+    if mode == 'full':
+        smooth_inst_frs = convolved[:,:input_data.shape[1]]
+    else:
+        smooth_inst_frs = convolved
+    return smooth_inst_frs
 
