@@ -224,3 +224,30 @@ def calc_smooth_mean_frs(mean_rasters: np.ndarray,
         smooth_inst_frs = convolved
     return smooth_inst_frs
 
+def calc_smooth_data_set_along_axis(data: np.ndarray, \
+    axis: int = 0, \
+    kernel_type: str = "half_gaussian", \
+    kernel_loc: float = 0.0, \
+    kernel_scale: float = 10.0, \
+    kernel_scale_mult: float = 8.0) -> np.ndarray:
+    if kernel_type == "gaussian":
+        kernel = sts.norm.pdf(
+            np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+            kernel_loc,
+            kernel_scale)
+    elif kernel_type == "half_gaussian":
+        kernel = sts.halfnorm.pdf(
+            np.arange(kernel_scale_mult * kernel_scale + 1),
+            kernel_loc,
+            kernel_scale)
+    else:
+        raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+        return
+    mode = 'same' if kernel_type == "gaussian" else 'full'
+    convolved = np.apply_along_axis( \
+        lambda m: np.convolve(m, kernel, mode), axis=axis, arr=data)
+    if mode == 'full':
+        smooth_inst_frs = convolved[:,:input_data.shape[1]]
+    else:
+        smooth_inst_frs = convolved
+    return smooth_inst_frs

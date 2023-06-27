@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
+from scipy.stats import ttest_ind
 from .transform import calc_inst_fire_rates_from
 from .transform import calc_smooth_mean_frs
 
@@ -69,10 +70,10 @@ def rn_integrator_gelson(nc_rasters: np.ndarray) -> np.ndarray:
     g_exc_inc = 0.005
     g_exc_dec = np.exp(-MS_PER_TIME_STEP / g_exc_tau)
     num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
+    g_exc = np.zeros((num_trials, num_ts_per_trial), dtype=np.single)
+    v_m = np.zeros((num_trials, num_ts_per_trial))
+    v_m[:, 0] = e_leak
     for trial in np.arange(num_trials):
-        g_exc = np.zeros((num_trials, num_ts_per_trial), dtype=np.single)
-        v_m = np.zeros((num_trials, num_ts_per_trial))
-        v_m[:, 0] = e_leak
         for ts in np.arange(1, num_ts_per_trial):
             exc_sum = 0
             for cell_id in np.arange(num_cells):
@@ -80,8 +81,8 @@ def rn_integrator_gelson(nc_rasters: np.ndarray) -> np.ndarray:
             g_exc[:, ts] = exc_sum * g_exc_inc + g_exc[:, ts-1] * g_exc_dec
             v_m[:, ts] = v_m[:, ts-1] \
                        + g_leak * (e_leak - v_m[:, ts-1]) \
-                       + g_exc[:, ts] * v_m[:, ts-1]
-    return vms
+                       - g_exc[:, ts] * v_m[:, ts-1]
+    return v_m
 
 """
     Description:
@@ -92,37 +93,38 @@ def slope(x):
     return np.array([x[2]-x[0],x[1]-x[0]])
 
 def calc_rn_thresh(pc_onset_times: np.ndarray, \
-        rn_v_m: np.ndarray, \
-        isi: int, \
-        num_trials: int) -> float:
-    int_max = -50
-    int_min = -60
+        nc_rasters: np.ndarray, \
+        pre_cs_collect: int, \
+        isi) -> float:
+    int_max = 2
+    int_min = -32
     # play with these cut offs
-    onset_time_cutoff = 50
+    onset_time_cutoff = int(0.1 * isi)
+    _, num_trials, num_ts_per_trial = nc_rasters.shape
     # play with this number, esp if we collect all trials
-    if num_trials < 250:
-        trial_cutoff_low = 150
-        trial_cutoff_high = 250
+    trial_cutoff_low = 50
+    if num_trials <= 250:
+        trial_cutoff_high = 200
     else:
-        trial_cutoff_low = 300
-        trial_cutoff_high = 500
+        trial_cutoff_high = 450 # assuming all other trials == 500
 
     iter = 0
     iter_max = 30
-    delta = 0.0005
+    delta = 0.1
     p_vals = np.zeros(3)
+    rn_vms = rn_integrator_gelson(nc_rasters)
     while np.mean(p_vals) < 0.95:
+        print(f"iter: {iter}, mean p-val: {np.mean(p_vals)}")
         rn_thresh = (int_max + int_min) / 2
         thresh_set = [rn_thresh - delta, rn_thresh, rn_thresh + delta]
 
         for id, t in enumerate(thresh_set):
-            rn_onset_times = calc_rn_onset_times(rn_v_m, isi, t)
+            rn_onset_times = calc_cr_onsets_from_rn(rn_vms, pre_cs_collect, isi, t)
 
             # Use the t-test to calculate the p-value
             p_vals[id] = ttest_ind(
-                rn_onset_times[trial_cutoff_low:trial_cutoff_high][rn_onset_times[trial_cutoff_low:trial_cutoff_high] > onset_time_cutoff],
-                pc_onset_times[trial_cutoff_low:trial_cutoff_high][pc_onset_times[trial_cutoff_low:trial_cutoff_high] > onset_time_cutoff])[1]
-
+                rn_onset_times[trial_cutoff_low:trial_cutoff_high],
+                pc_onset_times[trial_cutoff_low:trial_cutoff_high])[1]
         if all(slope(p_vals) > 0):
             int_min = rn_thresh
         elif all(slope(p_vals) < 0):
@@ -189,13 +191,12 @@ def calc_cr_onsets_from_pc(
         min_cs_pc_rate    = np.min(smooth_mean_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
         response_onset    = base_pc_rate * 0.8 # criterion is 80% of base rate
         amp_est           = response_onset - min_cs_pc_rate
-
-        for ts in np.arange(pre_cs_collect, pre_cs_collect + isi):
-            if amp_est > 5 \
-                and smooth_mean_inst_frs[trial, ts] > response_onset \
-                and smooth_mean_inst_frs[trial, ts+1] <= response_onset:
-                onset_times[trial] = ts - pre_cs_collect
-                break
+        if amp_est > 5:
+            for ts in np.arange(pre_cs_collect, pre_cs_collect + isi):
+                if smooth_mean_inst_frs[trial, ts] > response_onset \
+                    and smooth_mean_inst_frs[trial, ts+1] <= response_onset:
+                    onset_times[trial] = ts - pre_cs_collect
+                    break
     return onset_times
 
 """
@@ -205,8 +206,21 @@ def calc_cr_onsets_from_pc(
         where the value at a given trial number is the time-point
         at which the cr is initiated
 """
-def calc_cr_onsets_from_nc(dcn_rasters: np.ndarray, criterion: "") -> np.ndarray:
-    pass
+def calc_cr_onsets_from_rn(rn_vms: np.ndarray, \
+    pre_cs_collect: int, \
+    isi: int, \
+    rn_thresh: float) -> np.ndarray:
+    num_trials, num_ts_per_trial = rn_vms.shape
+    onset_times = np.zeros(num_trials)
+    for trial in np.arange(num_trials):
+        max_rn_vm = np.max(rn_vms[trial,pre_cs_collect:pre_cs_collect+isi])
+        amp_est = max_rn_vm - rn_thresh
+        if amp_est > 1:
+            for ts in np.arange(pre_cs_collect, pre_cs_collect + isi):
+                if rn_vms[trial, ts] < rn_thresh and rn_vms[trial, ts+1] >= rn_thresh:
+                    onset_times[trial] = ts - pre_cs_collect
+                    break
+    return onset_times
 
 """
     Description:
