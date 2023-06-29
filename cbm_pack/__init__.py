@@ -9,7 +9,7 @@ from .transform import reshape_raster, \
     calc_smooth_mean_frs, \
     calc_smooth_data_set_along_axis
 
-from .analysis import calc_cr_amp, \
+from .analysis import pcs_to_crs, \
     nc_to_cr_mike, \
     rn_integrator_gelson, \
     calc_rn_thresh, \

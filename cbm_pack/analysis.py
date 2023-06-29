@@ -2,10 +2,45 @@
 
 import numpy as np
 from scipy.stats import ttest_ind
+from sklearn.metrics import mean_squared_error
 from .transform import calc_inst_fire_rates_from
 from .transform import calc_smooth_mean_frs
+from .transform import calc_smooth_inst_fire_rates_from_raster
 
 MS_PER_TIME_STEP = 1
+
+"""
+    Description:
+
+        computes the cr amplitudes (on trials that they appear in) as a function
+        of time within the trial. The returned array shape is (num_trials, num_ts_per_trial)
+"""
+def pcs_to_crs(pc_rasters: np.ndarray, \
+    pre_cs_collect: int, \
+    post_cs_collect: int, \
+    isi: int) -> np.ndarray:
+    num_cells, num_trials, num_ts_per_trial = pc_rasters.shape
+    base_interval_low = int(0.25 * pre_cs_collect)
+    base_interval_high = int(0.75 * pre_cs_collect)
+    crs = np.zeros((num_trials, num_ts_per_trial))
+
+    smooth_inst_frs = calc_smooth_inst_fire_rates_from_raster(pc_rasters, kernel_type="gaussian")
+    mean_smooth_inst_frs = np.mean(smooth_inst_frs, axis=0)
+    amp_ests = np.zeros(num_trials)
+    for trial in np.arange(num_trials):
+        # get base rate in middle of pre-cs period as convolving depresses the tails of the interval
+        response_onset = 0.8 * np.mean(mean_smooth_inst_frs[trial, base_interval_low:base_interval_high])
+        amp_est = response_onset - np.min(mean_smooth_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
+        if amp_est > 5:
+            crs[trial, :] = response_onset - mean_smooth_inst_frs[trial, :]
+            amp_ests[trial] = np.max(crs[trial, :])
+    norm = np.max(amp_ests)
+    crs = crs / norm
+    crs *= 6.0
+    crs[crs < 0.01] = 0.0
+    crs[:, :int(0.05 * pre_cs_collect)] = 0.0
+    crs[:, int(-0.05 * post_cs_collect):] = 0.0
+    return crs
 
 """
     Description:
@@ -38,9 +73,9 @@ def nc_to_cr_mike(nc_rasters: np.ndarray) -> np.ndarray:
             exc_sum += nc_rasters[cell_id, :, ts]
         g_exc[:, ts] = exc_sum * g_exc_inc + g_exc[:, ts-1] * g_exc_dec
 
-    g_exc[g_exc < 0.] = 0.
-    g_exc = 5.0 * np.power(g_exc, 3)
-    g_exc[g_exc < 0.02] = 0.
+    g_exc[g_exc < 0.] = 0. # get rid of negative values
+    g_exc = 5.0 * np.power(g_exc, 3) # make the shape look more like a CR
+    g_exc[g_exc < 0.02] = 0. # threshold small squigglies
 
     v_m = np.zeros((num_trials, num_ts_per_trial), dtype=np.single)
     v_m[:, 0] = e_leak
@@ -96,8 +131,8 @@ def calc_rn_thresh(pc_onset_times: np.ndarray, \
         nc_rasters: np.ndarray, \
         pre_cs_collect: int, \
         isi) -> float:
-    int_max = 2
-    int_min = -32
+    int_max = -10.0
+    int_min = -30.0
     # play with these cut offs
     onset_time_cutoff = int(0.1 * isi)
     _, num_trials, num_ts_per_trial = nc_rasters.shape
@@ -108,42 +143,28 @@ def calc_rn_thresh(pc_onset_times: np.ndarray, \
     else:
         trial_cutoff_high = 450 # assuming all other trials == 500
 
-    iter = 0
-    iter_max = 30
-    delta = 0.1
-    p_vals = np.zeros(3)
+    rn_thresh = (int_min + int_max) / 2
     rn_vms = rn_integrator_gelson(nc_rasters)
-    while np.mean(p_vals) < 0.95:
-        print(f"iter: {iter}, mean p-val: {np.mean(p_vals)}")
-        rn_thresh = (int_max + int_min) / 2
-        thresh_set = [rn_thresh - delta, rn_thresh, rn_thresh + delta]
-
-        for id, t in enumerate(thresh_set):
-            rn_onset_times = calc_cr_onsets_from_rn(rn_vms, pre_cs_collect, isi, t)
-
-            # Use the t-test to calculate the p-value
-            p_vals[id] = ttest_ind(
-                rn_onset_times[trial_cutoff_low:trial_cutoff_high],
-                pc_onset_times[trial_cutoff_low:trial_cutoff_high])[1]
-        if all(slope(p_vals) > 0):
-            int_min = rn_thresh
-        elif all(slope(p_vals) < 0):
+    rn_onset_times = calc_cr_onsets_from_rn(rn_vms, pre_cs_collect, isi, rn_thresh)
+    quote_un_quote_true_mean = np.mean(pc_onset_times[trial_cutoff_low:trial_cutoff_high])
+    loss = np.abs(np.mean(rn_onset_times[trial_cutoff_low:trial_cutoff_high]) - quote_un_quote_true_mean)
+    loss_cutoff = 0.05
+    i = 0
+    while loss > loss_cutoff:
+        print(f"iteration: {i}, loss: {loss}, rn_thresh: {rn_thresh}")
+        if np.mean(rn_onset_times[trial_cutoff_low:trial_cutoff_high]) > quote_un_quote_true_mean:
             int_max = rn_thresh
         else:
-            print(f'Breaking RN threshold loop at: {rn_thresh}')
-            print(f'with a p-value of: {np.mean(p_vals)}')
-            break
-        rn_thresh = (int_max + int_min) / 2
-        iter += 1
-        if iter > iter_max:
-            break
-
+            int_min = rn_thresh
+        rn_thresh = (int_min + int_max) / 2
+        rn_onset_times = calc_cr_onsets_from_rn(rn_vms, pre_cs_collect, isi, rn_thresh)
+        loss = np.abs(np.mean(rn_onset_times[trial_cutoff_low:trial_cutoff_high]) - quote_un_quote_true_mean)
+        i += 1
     return rn_thresh
 
 
 def nc_to_cr_gelson(nc_rasters: np.ndarray) -> np.ndarray:
     v_m = rn_integrator_gelson(nc_rasters)
-    
 # PConsetTimes = PConsetTime_calc(ISI,meanFiringPC_df)
 #     PCmu,PCsigma,PConset_pdf = onset_pdf(PConsetTimes)
 # 
@@ -153,18 +174,6 @@ def nc_to_cr_gelson(nc_rasters: np.ndarray) -> np.ndarray:
 #     norm_factor = np.abs((DCN_RN_df-RN_thres).max().max())
 #     CR = 6 * (DCN_RN_df-RN_thres)/norm_factor
 #     CR[CR<0] = 0
-
-"""
-    Description:
-        
-        want an array with shape (num_trials, num_ts_collect) to
-        get the values necessary for a waterfall plot of CRs
-
-        assume the input has shape (num_cells, num_trials, num_ts_collect)
-"""
-def calc_cr_amp(nc_rasters: np.ndarray) -> np.ndarray:
-    pass
-
 
 """
     Description:
@@ -215,7 +224,7 @@ def calc_cr_onsets_from_rn(rn_vms: np.ndarray, \
     for trial in np.arange(num_trials):
         max_rn_vm = np.max(rn_vms[trial,pre_cs_collect:pre_cs_collect+isi])
         amp_est = max_rn_vm - rn_thresh
-        if amp_est > 1:
+        if amp_est > 1: # this is a free param
             for ts in np.arange(pre_cs_collect, pre_cs_collect + isi):
                 if rn_vms[trial, ts] < rn_thresh and rn_vms[trial, ts+1] >= rn_thresh:
                     onset_times[trial] = ts - pre_cs_collect
