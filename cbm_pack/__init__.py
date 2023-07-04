@@ -15,5 +15,6 @@ from .analysis import pcs_to_crs, \
     calc_rn_thresh, \
     calc_cr_onsets_from_pc, \
     calc_cr_onsets_from_rn, \
-    calc_cr_prob, \
-    calc_trials_to_criterion
+    calc_cr_probs_from_nc, \
+    calc_trials_to_criterion, \
+    ncs_to_cr_sean

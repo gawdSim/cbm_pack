@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
 import numpy as np
-from scipy.stats import ttest_ind
-from sklearn.metrics import mean_squared_error
 from .transform import calc_inst_fire_rates_from
 from .transform import calc_smooth_mean_frs
 from .transform import calc_smooth_inst_fire_rates_from_raster
@@ -14,6 +12,8 @@ MS_PER_TIME_STEP = 1
 
         computes the cr amplitudes (on trials that they appear in) as a function
         of time within the trial. The returned array shape is (num_trials, num_ts_per_trial)
+        
+        TODO: make base interval low and high kwargs
 """
 def pcs_to_crs(pc_rasters: np.ndarray, \
     pre_cs_collect: int, \
@@ -119,14 +119,20 @@ def rn_integrator_gelson(nc_rasters: np.ndarray) -> np.ndarray:
                        - g_exc[:, ts] * v_m[:, ts-1]
     return v_m
 
-"""
-    Description:
 
-        Computes...things
 """
-def slope(x):
-    return np.array([x[2]-x[0],x[1]-x[0]])
+    Description
 
+        Computes a red nucleus threshold that gives cr onset times whose mean is 
+        equal to the mean obtained from the cr onset times computed from pc cells
+        up to an error of loss_cutoff.
+
+        NOTE: it is assumed that for rasters obtained from ISIs less than 1000 the 
+        number of trials ran was 250. For greater ISIs, it is assumed that the number
+        of trials ran was 500
+
+        TODO: make loss_cutoff, trial_cutoff_high an input-able parameter
+"""
 def calc_rn_thresh(pc_onset_times: np.ndarray, \
         nc_rasters: np.ndarray, \
         pre_cs_collect: int, \
@@ -162,25 +168,68 @@ def calc_rn_thresh(pc_onset_times: np.ndarray, \
         i += 1
     return rn_thresh
 
+"""
+    Description:
 
-def nc_to_cr_gelson(nc_rasters: np.ndarray) -> np.ndarray:
-    v_m = rn_integrator_gelson(nc_rasters)
-# PConsetTimes = PConsetTime_calc(ISI,meanFiringPC_df)
-#     PCmu,PCsigma,PConset_pdf = onset_pdf(PConsetTimes)
-# 
-#     print('Calculating Red Nuclei Threshold')
-#     RN_thres = RN_thres_calc(ISI,DCN_RN_df,PConsetTimes)
-#     
-#     norm_factor = np.abs((DCN_RN_df-RN_thres).max().max())
-#     CR = 6 * (DCN_RN_df-RN_thres)/norm_factor
-#     CR[CR<0] = 0
+        calculates the CRs from ncs by computing the membrane potential of a hypothetical excitatory
+        red nucleus cell. Uses the CR onset times computed from the purkinje cells in order to produce
+        a red nucleus threshold that produces CR onset times whose mean is "close" to that obtained from
+        the purkinje cells. The red nucleus membrane potential is then modulated by obtaining
+        values equal to the deviation of the membrane potential from the threshold, normalizing, scaling by
+        the maximal eyelid closure in behavioural studies, and then cutting off values below a certain threshold
+
+        NOTE: this function is dependent upon the tuning of the integrated red nucleus membrane potential and 
+        hyper-parameters for obtaining the rn threshold. These params and hyper-params may also have an ISI dependence,
+        so care must be taken to obtain params that give *reasonable* results
+
+        TODO: make the cutoff threshold and max amplitude scaling kwargs
+"""
+def nc_to_cr_gelson(pc_rasters: np.ndarray, \
+    nc_rasters: np.ndarray, \
+    pre_cs_collect: int, \
+    isi: int) -> np.ndarray:
+
+    pc_onsets = calc_cr_onsets_from_pc(pc_rasters, pre_cs_collect, isi)
+    rn_thresh = calc_rn_thresh(pc_onsets, nc_rasters, pre_cs_collect, isi)
+    rn_v_m = rn_integrator_gelson(nc_rasters)
+    norm = np.abs(rn_v_m[:, pre_cs_collect:pre_cs_collect+isi] - rn_thresh[:, pre_cs_collect:pre_cs_collect+isi]).max()
+    crs = (rn_v_m - rn_thresh) / norm
+    crs *= 6.0
+    crs[crs < 0.01] = 0.0
+    return crs
 
 """
     Description:
 
-        want to return an array of (possibly) length (num_trials)
-        where the value at a given trial number is the time-point
-        at which the cr is initiated
+        calculates the CRs directly from the ncs by calculating
+        the per cell smooth fr and the taking the mean of that,
+        then normalizing, scaling, and applying a threshold for values
+        very close to zero
+"""
+def ncs_to_cr_sean(nc_rasters: np.ndarray, pre_cs_collect: int, post_cs_collect: int) -> np.ndarray:
+    num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
+    inst_frs = calc_inst_fire_rates_from(nc_rasters)
+    mean_inst_frs = np.mean(inst_frs, axis=0)
+    smooth_mean_inst_frs = calc_smooth_mean_frs(mean_inst_frs, kernel_type="gaussian")
+    amp_ests = np.zeros(num_trials)
+    for trial in np.arange(num_trials):
+            amp_ests[trial] = np.max(smooth_mean_inst_frs[trial, :])
+    crs = smooth_mean_inst_frs
+    norm = np.max(amp_ests)
+    crs = crs / norm
+    crs *= 6.0
+    crs[crs < 0.01] = 0.0
+    crs[:, :int(0.05 * pre_cs_collect)] = 0.0
+    crs[:, int(-0.05 * post_cs_collect):] = 0.0
+    return crs
+
+"""
+    Description:
+
+        calculates the CR onset times obtained from purkinje cells. uses the following criterion:
+
+            1) a CR is given only if the maximal deviation from the base firing rate is greater than 5
+            2) the point in simulated time when the pc firing rate falls below 80% of baseline
 """
 def calc_cr_onsets_from_pc(
         pc_rasters: np.ndarray, \
@@ -210,10 +259,22 @@ def calc_cr_onsets_from_pc(
 
 """
     Description:
+        calculates the cr onset times directly from nucleus cell rasters
 
-        want to return an array of (possibly) length (num_trials)
-        where the value at a given trial number is the time-point
-        at which the cr is initiated
+        TODO: write this function
+"""
+def calc_cr_onsets_from_nc(
+        nc_rasters: np.ndarray, \
+        pre_cs_collect: int, \
+        isi: int) -> np.ndarray:
+    pass
+"""
+    Description:
+        calculates the CR onset times obtained from red nucleus membrane potential. uses the following criterion:
+
+            1) a CR is given only if the maximal deviation from the input threshold is greater than 1
+            2) the point in simulated time when the red nucleus membrane potential passes threshold
+
 """
 def calc_cr_onsets_from_rn(rn_vms: np.ndarray, \
     pre_cs_collect: int, \
@@ -234,14 +295,8 @@ def calc_cr_onsets_from_rn(rn_vms: np.ndarray, \
 """
     Description:
 
-        want to return an array of (possibly) length (num_trials)
-        where the value at a given trial number is the probability
-        of a cr, as measured by... well if we're reading off a cr, 
-        how do we determine this? should we just return a single number,
-        which is the fraction of number of crs found over total number
-        of trials? check back into this
 """
-def calc_cr_prob(dcn_rasters: np.ndarray, criterion: str) -> float:
+def calc_cr_probs_from_nc(nc_rasters: np.ndarray) -> np.ndarray:
     pass
 
 """
