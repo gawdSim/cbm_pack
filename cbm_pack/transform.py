@@ -128,6 +128,12 @@ def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str = "raster",
     else:
         raise ValueError(f"Unknown data type '{data_type}'")
 
+"""
+    Description:
+        Compute the smooth instantaneous firing rates from rasters ie raw spike data.
+        This function computes the result w.r.t. individual cells, individual trials:
+        the returned shape will be the same as the input, ie (num_cells, num_trials, num_ts_per_trial)
+"""
 def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
     kernel_type: str = "half_gaussian", \
     kernel_loc: float = 0.0, \
@@ -162,6 +168,12 @@ def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
                 smooth_inst_frs[cell_id] = convolved
         return smooth_inst_frs
 
+"""
+    Description:
+        Compute the smooth instantaneous firing rates from psths ie trial summed spikes
+        for each cell, each time step. This function computes the result w.r.t.
+        individual cells: the returned shape will be the same as the input, ie (num_cells, num_ts_per_trial)
+"""
 def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
     num_trials: int, \
     kernel_type: str = "half_gaussian", \
@@ -197,6 +209,12 @@ def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
                 smooth_inst_frs[cell_id] = convolved
         return smooth_inst_frs
 
+"""
+    Description:
+        Compute the smooth instantaneous firing rates from cell-averaged rasters
+        for each trial, each time step. This function computes the result w.r.t.
+        cell-averages: the returned shape will be the same as the input, ie (num_trials, num_ts_per_trial)
+"""
 def calc_smooth_mean_frs(mean_rasters: np.ndarray,
     kernel_type: str = "half_gaussian", \
     kernel_loc: float = 0.0, \
@@ -224,6 +242,12 @@ def calc_smooth_mean_frs(mean_rasters: np.ndarray,
         smooth_inst_frs = convolved
     return smooth_inst_frs
 
+"""
+    Description:
+        A generic version of the above three functions. May in the future be used in their place.
+        Computes the smoothed data along the given axis of the input data array w.r.t. to the given
+        kernel and kernel params.
+"""
 def calc_smooth_data_set_along_axis(data: np.ndarray, \
     axis: int = 0, \
     kernel_type: str = "half_gaussian", \
@@ -251,3 +275,4 @@ def calc_smooth_data_set_along_axis(data: np.ndarray, \
     else:
         smooth_inst_frs = convolved
     return smooth_inst_frs
+

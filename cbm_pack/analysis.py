@@ -204,8 +204,14 @@ def ncs_to_cr_gelson(pc_rasters: np.ndarray, \
         the per cell smooth fr and the taking the mean of that,
         then normalizing, scaling, and applying a threshold for values
         very close to zero
+
+        NOTE: Updated 07/05/2023 by including threshold of 10Hz above base rate
+        for CRs. From Medina et al 2000 (Timing Mechanisms in the Cerebellum)
 """
-def ncs_to_cr_sean(nc_rasters: np.ndarray, pre_cs_collect: int, post_cs_collect: int) -> np.ndarray:
+def ncs_to_cr_sean(nc_rasters: np.ndarray, \
+    pre_cs_collect: int, \
+    post_cs_collect: int, \
+    isi: int) -> np.ndarray:
     num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
     base_interval_low = int(0.25 * pre_cs_collect)
     base_interval_high = int(0.75 * pre_cs_collect)
@@ -215,16 +221,18 @@ def ncs_to_cr_sean(nc_rasters: np.ndarray, pre_cs_collect: int, post_cs_collect:
     crs = np.zeros((num_trials, num_ts_per_trial))
     amp_ests = np.zeros(num_trials)
     for trial in np.arange(num_trials):
-            trial_max_fr = np.max(smooth_mean_inst_frs[trial, :])
-            # criterion is increase in 10 Hz from background
-            response_criterion = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high]) + 10
-            amp_est = trial_max_fr - response_criterion
-            if amp_est > 0:
-                crs[trial, :] = smooth_mean_inst_frs[trial, :] - response_criterion
-                amp_ests[trial] = amp_est
+        trial_max_fr = np.max(smooth_mean_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
+        trial_base_fr = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high])
+        response_criterion = trial_base_fr + 10
+        amp_est = trial_max_fr - trial_base_fr
+        if amp_est > 0:
+            crs[trial, :] = smooth_mean_inst_frs[trial, :] - response_criterion
+            amp_ests[trial] = amp_est
+    crs[crs < 0.0] = 0.0
     norm = np.max(amp_ests)
     crs = crs / norm
     crs *= 6.0
+    # some tail action: might be a result of smoothing: look into
     crs[:, :int(0.05 * pre_cs_collect)] = 0.0
     crs[:, int(-0.05 * post_cs_collect):] = 0.0
     return crs
@@ -265,15 +273,36 @@ def calc_cr_onsets_from_pc(
 
 """
     Description:
-        calculates the cr onset times directly from nucleus cell rasters
-
-        TODO: write this function
+        calculates the cr onset times directly from nucleus cell rasters by computing
+        cell-averaged, smoothed firing rates then checking whether these frs (as a function of
+        trial-time) ever reach criterion, and if so, keeping track of the time step
 """
 def calc_cr_onsets_from_nc(
         nc_rasters: np.ndarray, \
         pre_cs_collect: int, \
         isi: int) -> np.ndarray:
-    pass
+    num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
+    onset_times = -10 * np.ones(num_trials)
+    base_interval_low = int(0.25 * pre_cs_collect)
+    base_interval_high = int(0.75 * pre_cs_collect)
+
+    inst_frs = calc_inst_fire_rates_from(nc_rasters)
+    mean_inst_frs = np.mean(inst_frs, axis=0)
+    smooth_mean_inst_frs = calc_smooth_mean_frs(mean_inst_frs, kernel_type="gaussian")
+    for trial in np.arange(num_trials):
+        # get base rate in middle of pre-cs period as convolving depresses the tails of the interval
+        trial_max_fr = np.max(smooth_mean_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
+        trial_base_fr = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high])
+        response_criterion = trial_base_fr + 10
+        amp_est = trial_max_fr - trial_base_fr
+        if amp_est > 0:
+            for ts in np.arange(pre_cs_collect, pre_cs_collect + isi):
+                if smooth_mean_inst_frs[trial, ts] < response_criterion \
+                    and smooth_mean_inst_frs[trial, ts+1] >= response_criterion:
+                    onset_times[trial] = ts - pre_cs_collect
+                    break
+    return onset_times
+
 """
     Description:
         calculates the CR onset times obtained from red nucleus membrane potential. uses the following criterion:
