@@ -59,7 +59,7 @@ def pcs_to_crs(pc_rasters: np.ndarray, \
         then run them through this alg, updating across all trials
 """
 
-def nc_to_cr_mike(nc_rasters: np.ndarray) -> np.ndarray:
+def ncs_to_cr_mike(nc_rasters: np.ndarray) -> np.ndarray:
     g_exc_tau = 15.0
     e_leak = 0.0
     g_leak = 0.025 / (6 - MS_PER_TIME_STEP)
@@ -118,7 +118,6 @@ def rn_integrator_gelson(nc_rasters: np.ndarray) -> np.ndarray:
                        + g_leak * (e_leak - v_m[:, ts-1]) \
                        - g_exc[:, ts] * v_m[:, ts-1]
     return v_m
-
 
 """
     Description
@@ -184,7 +183,7 @@ def calc_rn_thresh(pc_onset_times: np.ndarray, \
 
         TODO: make the cutoff threshold and max amplitude scaling kwargs
 """
-def nc_to_cr_gelson(pc_rasters: np.ndarray, \
+def ncs_to_cr_gelson(pc_rasters: np.ndarray, \
     nc_rasters: np.ndarray, \
     pre_cs_collect: int, \
     isi: int) -> np.ndarray:
@@ -208,17 +207,24 @@ def nc_to_cr_gelson(pc_rasters: np.ndarray, \
 """
 def ncs_to_cr_sean(nc_rasters: np.ndarray, pre_cs_collect: int, post_cs_collect: int) -> np.ndarray:
     num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
+    base_interval_low = int(0.25 * pre_cs_collect)
+    base_interval_high = int(0.75 * pre_cs_collect)
     inst_frs = calc_inst_fire_rates_from(nc_rasters)
     mean_inst_frs = np.mean(inst_frs, axis=0)
     smooth_mean_inst_frs = calc_smooth_mean_frs(mean_inst_frs, kernel_type="gaussian")
+    crs = np.zeros((num_trials, num_ts_per_trial))
     amp_ests = np.zeros(num_trials)
     for trial in np.arange(num_trials):
-            amp_ests[trial] = np.max(smooth_mean_inst_frs[trial, :])
-    crs = smooth_mean_inst_frs
+            trial_max_fr = np.max(smooth_mean_inst_frs[trial, :])
+            # criterion is increase in 10 Hz from background
+            response_criterion = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high]) + 10
+            amp_est = trial_max_fr - response_criterion
+            if amp_est > 0:
+                crs[trial, :] = smooth_mean_inst_frs[trial, :] - response_criterion
+                amp_ests[trial] = amp_est
     norm = np.max(amp_ests)
     crs = crs / norm
     crs *= 6.0
-    crs[crs < 0.01] = 0.0
     crs[:, :int(0.05 * pre_cs_collect)] = 0.0
     crs[:, int(-0.05 * post_cs_collect):] = 0.0
     return crs
