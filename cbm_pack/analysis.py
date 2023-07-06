@@ -294,8 +294,7 @@ def calc_cr_onsets_from_nc(
         trial_max_fr = np.max(smooth_mean_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
         trial_base_fr = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high])
         response_criterion = trial_base_fr + 10
-        amp_est = trial_max_fr - trial_base_fr
-        if amp_est > 0:
+        if trial_max_fr > response_criterion:
             for ts in np.arange(pre_cs_collect, pre_cs_collect + isi):
                 if smooth_mean_inst_frs[trial, ts] < response_criterion \
                     and smooth_mean_inst_frs[trial, ts+1] >= response_criterion:
@@ -329,10 +328,69 @@ def calc_cr_onsets_from_rn(rn_vms: np.ndarray, \
 
 """
     Description:
+        computes the probability of a CR by averaging over an array indicating the presence
+        of a CR in a trial or not. This function computes the presence of a CR from the
+        activity of DCN cells (straight from their cell rasters)
+"""
+def calc_cr_probs_from_pc(pc_rasters: np.ndarray, \
+    pre_cs_collect: int, \
+    isi: int, \
+    num_avg_over: int) -> np.ndarray:
+    num_cells, num_trials, num_ts_per_trial = pc_rasters.shape
+    assert num_avg_over < num_trials
+    cr_bools = np.zeros(num_trials, dtype=np.single)
+    base_interval_low = int(0.25 * pre_cs_collect)
+    base_interval_high = int(0.75 * pre_cs_collect)
+
+    inst_frs = calc_inst_fire_rates_from(pc_rasters)
+    mean_inst_frs = np.mean(inst_frs, axis=0)
+    smooth_mean_inst_frs = calc_smooth_mean_frs(mean_inst_frs, kernel_type="gaussian")
+    for trial in np.arange(num_trials):
+        trial_base_fr = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high])
+        trial_min_fr = np.min(smooth_mean_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
+        response_criterion = trial_base_fr * 0.8 # criterion is 80% of base rate
+        amp_est = response_criterion - trial_min_fr
+        if amp_est > 5:
+            cr_bools[trial] = 1.0
+    cr_probs = np.zeros(num_trials // num_avg_over, dtype=np.single)
+    avg_start = 0
+    for id, trial in np.ndenumerate(np.arange(avg_start, num_trials, num_avg_over)):
+        cr_probs[id] = np.mean(cr_bools[trial:trial+num_avg_over])
+    return cr_probs
 
 """
-def calc_cr_probs_from_nc(nc_rasters: np.ndarray) -> np.ndarray:
-    pass
+    Description:
+        computes the probability of a CR by averaging over an array indicating the presence
+        of a CR in a trial or not. This function computes the presence of a CR from the
+        activity of DCN cells (straight from their cell rasters)
+"""
+def calc_cr_probs_from_nc(nc_rasters: np.ndarray, \
+    pre_cs_collect: int, \
+    isi: int, \
+    num_avg_over: int) -> np.ndarray:
+    num_cells, num_trials, num_ts_per_trial = nc_rasters.shape
+    assert num_avg_over < num_trials
+    cr_bools = np.zeros(num_trials, dtype=np.single)
+    base_interval_low = int(0.25 * pre_cs_collect)
+    base_interval_high = int(0.75 * pre_cs_collect)
+
+    inst_frs = calc_inst_fire_rates_from(nc_rasters)
+    mean_inst_frs = np.mean(inst_frs, axis=0)
+    smooth_mean_inst_frs = calc_smooth_mean_frs(mean_inst_frs, kernel_type="gaussian")
+    for trial in np.arange(num_trials):
+        # get base rate in middle of pre-cs period as convolving depresses the tails of the interval
+        trial_max_fr = np.max(smooth_mean_inst_frs[trial, pre_cs_collect:pre_cs_collect+isi])
+        trial_base_fr = np.mean(smooth_mean_inst_frs[trial, base_interval_low:base_interval_high])
+        print(f"trial {trial} max fr: {trial_max_fr}")
+        response_criterion = trial_base_fr + 10.0
+        print(f"trial {trial} criterion: {response_criterion}")
+        if trial_max_fr > response_criterion:
+            cr_bools[trial] = 1.0
+    cr_probs = np.zeros(num_trials // num_avg_over, dtype=np.single)
+    avg_start = 0
+    for id, trial in np.ndenumerate(np.arange(avg_start, num_trials, num_avg_over)):
+        cr_probs[id] = np.mean(cr_bools[trial:trial+num_avg_over])
+    return cr_probs
 
 """
     Description:
