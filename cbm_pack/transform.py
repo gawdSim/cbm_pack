@@ -104,6 +104,8 @@ def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
         Expected input data can either be psth or raster data, and the respective shapes of
         either is (num_cells, num_ts) and (num_cells, num_trials, num_ts). An array of the 
         same shape is returned
+
+        TODO: debug for psths, something is amiss >:(
 """
 def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str = "raster", num_trials: int = 0) -> np.ndarray:
     if data_type == "psth":
@@ -173,6 +175,8 @@ def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
         Compute the smooth instantaneous firing rates from psths ie trial summed spikes
         for each cell, each time step. This function computes the result w.r.t.
         individual cells: the returned shape will be the same as the input, ie (num_cells, num_ts_per_trial)
+
+    TODO: debug, not giving reasonable smooth frs for given psth data
 """
 def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
     num_trials: int, \
