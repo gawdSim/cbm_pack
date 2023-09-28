@@ -77,7 +77,6 @@ def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
     else:
         run_time = spike_train.shape[0]
         spk_times = np.nonzero(spike_train)[0]
-        aligned_inst_fire_rates = []
 
         if spk_times.size == 0:
             return np.zeros(run_time)
@@ -85,12 +84,12 @@ def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
             isi = np.diff(spk_times)
             inst_fire_rates = 1 / isi * 1000
             spike_train_proxy = spike_train[spk_times[0]+1:spk_times[-1]]
+            aligned_inst_fire_rates = np.zeros(spike_train_proxy.size)
             count = 0
             for i in np.arange(spike_train_proxy.size):
-                aligned_inst_fire_rates.append(inst_fire_rates[count])
+                aligned_inst_fire_rates[i] = inst_fire_rates[count]
                 if spike_train_proxy[i] == 1:
                     count += 1
-            aligned_inst_fire_rates = np.array(aligned_inst_fire_rates)
             prepend = np.zeros(spk_times[0])
             aligned_inst_fire_rates = np.concatenate((prepend, aligned_inst_fire_rates))
             append = np.zeros(run_time - aligned_inst_fire_rates.size)
@@ -159,15 +158,13 @@ def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
         else:
             raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
             return
-        smooth_inst_frs = np.zeros(input_data.shape)
         mode = 'same' if kernel_type == "gaussian" else 'full'
-        for cell_id in np.arange(input_data.shape[0]):
-            convolved = np.apply_along_axis( \
-                    lambda m: np.convolve(m, kernel, mode), axis=1, arr=inst_fr[cell_id])
-            if mode == 'full':
-                smooth_inst_frs[cell_id] = convolved[:,:input_data.shape[2]]
-            else:
-                smooth_inst_frs[cell_id] = convolved
+        convolved = np.apply_along_axis( \
+            lambda m: np.convolve(m, kernel, mode), axis=2, arr=inst_fr)
+        if mode == 'full':
+            smooth_inst_frs = convolved[:,:,:input_data.shape[2]]
+        else:
+            smooth_inst_frs = convolved
         return smooth_inst_frs
 
 """
