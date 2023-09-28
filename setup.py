@@ -11,7 +11,11 @@ setup(
     author_email='sean.gallo@austin.texas.edu',
     url='https://github.com/gawdSim/cbm_pack',
     package=['cbm_pack'],
-    install_requires=[],
+    install_requires=[
+        'numpy',
+        'scipy',
+
+        ],
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
