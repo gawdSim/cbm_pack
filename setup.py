@@ -7,7 +7,7 @@ setup(
         A library of analysis scripts for CbmSim, a product
         of the Mauk lab at the University of Texas at Austin
     """,
-    author='Sean Gallogly'
+    author='Sean Gallogly',
     author_email='sean.gallo@austin.texas.edu',
     url='https://github.com/gawdSim/cbm_pack',
     package=['cbm_pack'],
