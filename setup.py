@@ -10,7 +10,7 @@ setup(
     author='Sean Gallogly',
     author_email='sean.gallo@austin.texas.edu',
     url='https://github.com/gawdSim/cbm_pack',
-    package=['cbm_pack'],
+    package=find_packages(),
     install_requires=[
         'numpy',
         'scipy',
