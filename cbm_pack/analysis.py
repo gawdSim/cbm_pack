@@ -23,7 +23,7 @@ def pcs_to_crs(
     num_cells, num_trials, num_ts_per_trial = pc_rasters.shape
     base_interval_low = int(0.25 * pre_cs_collect)
     base_interval_high = int(0.75 * pre_cs_collect)
-    cr_entrap_win = 10 # time step window to average over to detect cr
+    cr_entrap_win = 10  # time step window to average over to detect cr
     crs = np.zeros((num_trials, num_ts_per_trial), dtype=np.single)
 
     smooth_inst_frs = calc_smooth_inst_fire_rates_from_raster(
@@ -43,8 +43,12 @@ def pcs_to_crs(
         )
         amp_est = response_onset - min_rate
         for ts in np.arange(pre_cs_collect, pre_cs_collect + isi, 1):
-            if amp_est > 5 && mean_smooth_inst_frs[trial, ts] > response_onset \
-                && np.mean(mean_smooth_inst_frs[trial, ts:ts+cr_entrap_win]) <= response_onset:
+            if (
+                amp_est > 5
+                and mean_smooth_inst_frs[trial, ts] > response_onset
+                and np.mean(mean_smooth_inst_frs[trial, ts : ts + cr_entrap_win])
+                <= response_onset
+            ):
                 onset_times[trial] = np.uint32(ts - pre_cs_collect + cr_entrap_win / 2)
                 cr_exists = True
                 break
