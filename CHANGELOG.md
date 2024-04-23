@@ -11,4 +11,4 @@ cr amplitudes, and the cr onset times. Their shapes are
 
 Other Changes:
 
-I updated [example.py](https://github.come/gawdSim/cbm_pack/blob/main/example.py) to reflect the changes made to the packaging structure of cbm_pack  
+I updated [example.py](https://github.com/gawdSim/cbm_pack/blob/main/example.py) to reflect the changes made to the packaging structure of cbm_pack  
