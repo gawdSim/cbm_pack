@@ -11,12 +11,17 @@ import scipy.stats as sts
         as: (num_cells, num_trials, num_ts)
 """
 
-def reshape_raster(data: np.ndarray, num_cells: int, num_trials: int, num_ts: int) -> np.ndarray:
+
+def reshape_raster(
+    data: np.ndarray, num_cells: int, num_trials: int, num_ts: int
+) -> np.ndarray:
     try:
         assert data.size == num_cells * num_trials * num_ts
     except AssertionError:
-        raise RuntimeError(f"cannot reshape an array of size {data.size} into an array with dimensions"
-                             f"({num_cells}, {num_trials}, {num_ts})")
+        raise RuntimeError(
+            f"cannot reshape an array of size {data.size} into an array with dimensions"
+            f"({num_cells}, {num_trials}, {num_ts})"
+        )
     else:
         transformed_data = data.reshape((num_ts * num_trials, num_cells))
         transformed_data = transformed_data.transpose()
@@ -25,10 +30,13 @@ def reshape_raster(data: np.ndarray, num_cells: int, num_trials: int, num_ts: in
             trial_start = 0
             trial_end = num_ts
             for trial in np.arange(num_trials):
-                result[cell_id,trial,:] = transformed_data[cell_id,trial_start:trial_end]
+                result[cell_id, trial, :] = transformed_data[
+                    cell_id, trial_start:trial_end
+                ]
                 trial_start += num_ts
                 trial_end += num_ts
         return result
+
 
 """
     Description:
@@ -41,13 +49,19 @@ def reshape_raster(data: np.ndarray, num_cells: int, num_trials: int, num_ts: in
         then the returned np.ndarray will have dims (32, 1400), where
         the sum will occur over trials
 """
+
+
 def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray:
     try:
         assert len(raster.shape) == 3
     except AssertionError:
-        raise ValueError(f"The expected number of dimensions was 3. Got {len(raster.shape)}")
+        raise ValueError(
+            f"The expected number of dimensions was 3. Got {len(raster.shape)}"
+        )
     else:
-        return np.sum(raster,1, dtype=np.uint32) # potential memory hog
+        return np.sum(raster, 1, dtype=np.uint32)  # potential memory hog
+
+
 """
     Description:
 
@@ -69,11 +83,15 @@ def calc_psth_from_raster(raster: np.ndarray, dims_tags) -> np.ndarray:
         subsequent lines of the code.
 
 """
+
+
 def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
     try:
         assert len(spike_train.shape) == 1
     except AssertionError:
-        raise ValueError(f"The expected number of dimensions was 1. Got {len(spike_train.shape)}")
+        raise ValueError(
+            f"The expected number of dimensions was 1. Got {len(spike_train.shape)}"
+        )
     else:
         run_time = spike_train.shape[0]
         spk_times = np.nonzero(spike_train)[0]
@@ -83,7 +101,7 @@ def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
         else:
             isi = np.diff(spk_times)
             inst_fire_rates = 1 / isi * 1000
-            spike_train_proxy = spike_train[spk_times[0]+1:spk_times[-1]]
+            spike_train_proxy = spike_train[spk_times[0] + 1 : spk_times[-1]]
             aligned_inst_fire_rates = np.zeros(spike_train_proxy.size)
             count = 0
             for i in np.arange(spike_train_proxy.size):
@@ -96,6 +114,7 @@ def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
             aligned_inst_fire_rates = np.concatenate((aligned_inst_fire_rates, append))
             return aligned_inst_fire_rates
 
+
 """
     Description:
 
@@ -106,28 +125,38 @@ def calc_inst_fire_rates_from_rast_1d(spike_train: np.ndarray) -> np.ndarray:
 
         TODO: debug for psths, something is amiss >:(
 """
-def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str = "raster", num_trials: int = 0) -> np.ndarray:
+
+
+def calc_inst_fire_rates_from(
+    input_data: np.ndarray, data_type: str = "raster", num_trials: int = 0
+) -> np.ndarray:
     if data_type == "psth":
         try:
             assert num_trials > 0
         except AssertionError:
-            raise ValueError("Number of trials must be greater than zero for psth input data type")
+            raise ValueError(
+                "Number of trials must be greater than zero for psth input data type"
+            )
         else:
             return (input_data * 1000) / num_trials
     elif data_type == "raster":
         try:
             assert len(input_data.shape) == 3
         except AssertionError:
-            raise ValueError(f"Expected input dimensions to be 3, got '{input_data.shape}'")
+            raise ValueError(
+                f"Expected input dimensions to be 3, got '{input_data.shape}'"
+            )
         else:
             num_cells, num_trials, num_ts_per_trial = input_data.shape
             frs = np.zeros(input_data.shape)
             for cell_id in np.arange(num_cells):
-                frs[cell_id] = calc_inst_fire_rates_from_rast_1d( \
-                    input_data[cell_id].reshape(num_trials * num_ts_per_trial)).reshape(num_trials, num_ts_per_trial)
+                frs[cell_id] = calc_inst_fire_rates_from_rast_1d(
+                    input_data[cell_id].reshape(num_trials * num_ts_per_trial)
+                ).reshape(num_trials, num_ts_per_trial)
             return frs
     else:
         raise ValueError(f"Unknown data type '{data_type}'")
+
 
 """
     Description:
@@ -135,11 +164,15 @@ def calc_inst_fire_rates_from(input_data: np.ndarray, data_type: str = "raster",
         This function computes the result w.r.t. individual cells, individual trials:
         the returned shape will be the same as the input, ie (num_cells, num_trials, num_ts_per_trial)
 """
-def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
-    kernel_type: str = "half_gaussian", \
-    kernel_loc: float = 0.0, \
-    kernel_scale: float = 10.0, \
-    kernel_scale_mult: float = 8.0) -> np.ndarray:
+
+
+def calc_smooth_inst_fire_rates_from_raster(
+    input_data: np.ndarray,
+    kernel_type: str = "half_gaussian",
+    kernel_loc: float = 0.0,
+    kernel_scale: float = 10.0,
+    kernel_scale_mult: float = 8.0,
+) -> np.ndarray:
     try:
         inst_fr = calc_inst_fire_rates_from(input_data)
     except ValueError as v_err:
@@ -147,25 +180,35 @@ def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
     else:
         if kernel_type == "gaussian":
             kernel = sts.norm.pdf(
-                np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+                np.arange(
+                    -kernel_scale_mult * kernel_scale,
+                    kernel_scale_mult * kernel_scale + 1,
+                    1,
+                ),
                 kernel_loc,
-                kernel_scale)
+                kernel_scale,
+            )
         elif kernel_type == "half_gaussian":
             kernel = sts.halfnorm.pdf(
                 np.arange(kernel_scale_mult * kernel_scale + 1),
                 kernel_loc,
-                kernel_scale)
+                kernel_scale,
+            )
         else:
-            raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+            raise ValueError(
+                f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'"
+            )
             return
-        mode = 'same' if kernel_type == "gaussian" else 'full'
-        convolved = np.apply_along_axis( \
-            lambda m: np.convolve(m, kernel, mode), axis=2, arr=inst_fr)
-        if mode == 'full':
-            smooth_inst_frs = convolved[:,:,:input_data.shape[2]]
+        mode = "same" if kernel_type == "gaussian" else "full"
+        convolved = np.apply_along_axis(
+            lambda m: np.convolve(m, kernel, mode), axis=2, arr=inst_fr
+        )
+        if mode == "full":
+            smooth_inst_frs = convolved[:, :, : input_data.shape[2]]
         else:
             smooth_inst_frs = convolved
         return smooth_inst_frs
+
 
 """
     Description:
@@ -175,12 +218,16 @@ def calc_smooth_inst_fire_rates_from_raster(input_data: np.ndarray,
 
     TODO: debug, not giving reasonable smooth frs for given psth data
 """
-def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
-    num_trials: int, \
-    kernel_type: str = "half_gaussian", \
-    kernel_loc: float = 0.0, \
-    kernel_scale: float = 10.0, \
-    kernel_scale_mult: float = 8.0) -> np.ndarray:
+
+
+def calc_smooth_inst_fire_rates_from_psth(
+    input_data: np.ndarray,
+    num_trials: int,
+    kernel_type: str = "half_gaussian",
+    kernel_loc: float = 0.0,
+    kernel_scale: float = 10.0,
+    kernel_scale_mult: float = 8.0,
+) -> np.ndarray:
     try:
         inst_fr = calc_inst_fire_rates_from(input_data, "psth", num_trials=num_trials)
     except ValueError as v_err:
@@ -188,27 +235,37 @@ def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
     else:
         if kernel_type == "gaussian":
             kernel = sts.norm.pdf(
-                np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+                np.arange(
+                    -kernel_scale_mult * kernel_scale,
+                    kernel_scale_mult * kernel_scale + 1,
+                    1,
+                ),
                 kernel_loc,
-                kernel_scale)
+                kernel_scale,
+            )
         elif kernel_type == "half_gaussian":
             kernel = sts.halfnorm.pdf(
                 np.arange(kernel_scale_mult * kernel_scale + 1),
                 kernel_loc,
-                kernel_scale)
+                kernel_scale,
+            )
         else:
-            raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+            raise ValueError(
+                f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'"
+            )
             return
         smooth_inst_frs = np.zeros(input_data.shape)
-        mode = 'same' if kernel_type == "gaussian" else 'full'
+        mode = "same" if kernel_type == "gaussian" else "full"
         for cell_id in np.arange(input_data.shape[0]):
-            convolved = np.apply_along_axis( \
-                lambda m: np.convolve(m, kernel, mode), axis=0, arr=inst_fr[cell_id])
-            if mode == 'full':
-                smooth_inst_frs[cell_id] = convolved[:,:input_data.shape[1]]
+            convolved = np.apply_along_axis(
+                lambda m: np.convolve(m, kernel, mode), axis=0, arr=inst_fr[cell_id]
+            )
+            if mode == "full":
+                smooth_inst_frs[cell_id] = convolved[:, : input_data.shape[1]]
             else:
                 smooth_inst_frs[cell_id] = convolved
         return smooth_inst_frs
+
 
 """
     Description:
@@ -216,32 +273,44 @@ def calc_smooth_inst_fire_rates_from_psth(input_data: np.ndarray,
         for each trial, each time step. This function computes the result w.r.t.
         cell-averages: the returned shape will be the same as the input, ie (num_trials, num_ts_per_trial)
 """
-def calc_smooth_mean_frs(mean_rasters: np.ndarray,
-    kernel_type: str = "half_gaussian", \
-    kernel_loc: float = 0.0, \
-    kernel_scale: float = 10.0, \
-    kernel_scale_mult: float = 8.0) -> np.ndarray:
+
+
+def calc_smooth_mean_frs(
+    mean_rasters: np.ndarray,
+    kernel_type: str = "half_gaussian",
+    kernel_loc: float = 0.0,
+    kernel_scale: float = 10.0,
+    kernel_scale_mult: float = 8.0,
+) -> np.ndarray:
     if kernel_type == "gaussian":
         kernel = sts.norm.pdf(
-            np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+            np.arange(
+                -kernel_scale_mult * kernel_scale,
+                kernel_scale_mult * kernel_scale + 1,
+                1,
+            ),
             kernel_loc,
-            kernel_scale)
+            kernel_scale,
+        )
     elif kernel_type == "half_gaussian":
         kernel = sts.halfnorm.pdf(
-            np.arange(kernel_scale_mult * kernel_scale + 1),
-            kernel_loc,
-            kernel_scale)
+            np.arange(kernel_scale_mult * kernel_scale + 1), kernel_loc, kernel_scale
+        )
     else:
-        raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+        raise ValueError(
+            f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'"
+        )
         return
-    mode = 'same' if kernel_type == "gaussian" else 'full'
-    convolved = np.apply_along_axis( \
-        lambda m: np.convolve(m, kernel, mode), axis=0, arr=mean_rasters)
-    if mode == 'full':
-        smooth_inst_frs = convolved[:,:input_data.shape[1]]
+    mode = "same" if kernel_type == "gaussian" else "full"
+    convolved = np.apply_along_axis(
+        lambda m: np.convolve(m, kernel, mode), axis=0, arr=mean_rasters
+    )
+    if mode == "full":
+        smooth_inst_frs = convolved[:, : input_data.shape[1]]
     else:
         smooth_inst_frs = convolved
     return smooth_inst_frs
+
 
 """
     Description:
@@ -249,31 +318,41 @@ def calc_smooth_mean_frs(mean_rasters: np.ndarray,
         Computes the smoothed data along the given axis of the input data array w.r.t. to the given
         kernel and kernel params.
 """
-def calc_smooth_data_set_along_axis(data: np.ndarray, \
-    axis: int = 0, \
-    kernel_type: str = "half_gaussian", \
-    kernel_loc: float = 0.0, \
-    kernel_scale: float = 10.0, \
-    kernel_scale_mult: float = 8.0) -> np.ndarray:
+
+
+def calc_smooth_data_set_along_axis(
+    data: np.ndarray,
+    axis: int = 0,
+    kernel_type: str = "half_gaussian",
+    kernel_loc: float = 0.0,
+    kernel_scale: float = 10.0,
+    kernel_scale_mult: float = 8.0,
+) -> np.ndarray:
     if kernel_type == "gaussian":
         kernel = sts.norm.pdf(
-            np.arange(-kernel_scale_mult * kernel_scale, kernel_scale_mult * kernel_scale + 1, 1),
+            np.arange(
+                -kernel_scale_mult * kernel_scale,
+                kernel_scale_mult * kernel_scale + 1,
+                1,
+            ),
             kernel_loc,
-            kernel_scale)
+            kernel_scale,
+        )
     elif kernel_type == "half_gaussian":
         kernel = sts.halfnorm.pdf(
-            np.arange(kernel_scale_mult * kernel_scale + 1),
-            kernel_loc,
-            kernel_scale)
+            np.arange(kernel_scale_mult * kernel_scale + 1), kernel_loc, kernel_scale
+        )
     else:
-        raise ValueError(f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'")
+        raise ValueError(
+            f"Expected a kernel type of either 'gaussian' or 'half gaussian'. Got '{kernel_type}'"
+        )
         return
-    mode = 'same' if kernel_type == "gaussian" else 'full'
-    convolved = np.apply_along_axis( \
-        lambda m: np.convolve(m, kernel, mode), axis=axis, arr=data)
-    if mode == 'full':
-        smooth_inst_frs = convolved[:,:input_data.shape[1]]
+    mode = "same" if kernel_type == "gaussian" else "full"
+    convolved = np.apply_along_axis(
+        lambda m: np.convolve(m, kernel, mode), axis=axis, arr=data
+    )
+    if mode == "full":
+        smooth_inst_frs = convolved[:, : input_data.shape[1]]
     else:
         smooth_inst_frs = convolved
     return smooth_inst_frs
-
